@@ -1,14 +1,20 @@
 package com.example.test_lab_week_12
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.RecyclerView
-import com.example.test_lab_week_12.model.Movie
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.google.android.material.snackbar.Snackbar // For Snackbar
-import java.util.Calendar // For current year filtering
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.launch
+import com.example.test_lab_week_12.model.Movie
+import android.content.Intent
+
+
+
 // Assuming MovieAdapter, MovieApplication, MovieViewModel, and R.id/R.layout are imported
 class MainActivity : AppCompatActivity() {
     private val movieAdapter by lazy {
@@ -19,42 +25,45 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    // In MainActivity.kt, inside onCreate
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate (savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        // Assuming movieAdapter is initialized, e.g., private lateinit var movieAdapter: MovieAdapter
         val recyclerView: RecyclerView = findViewById(R.id.movie_list)
         recyclerView.adapter = movieAdapter
 
         val movieRepository = (application as MovieApplication).movieRepository
-        val movieViewModel = ViewModelProvider(
-        this, object: ViewModelProvider.Factory {
-            override fun <T: ViewModel> create (modelClass: Class<T>): T{
-                return MovieViewModel (movieRepository) as T
-            }
-        }) [MovieViewModel::class.java]
+        val movieViewModel  = ViewModelProvider(
+            this, object: ViewModelProvider.Factory {
+                override fun <T: ViewModel> create (modelClass: Class<T>): T{
+                    return MovieViewModel (movieRepository) as T
+                }
+            })[MovieViewModel::class.java]
 
-        movieViewModel.popularMovies.observe (this) { popularMovies ->
-            val currentYear =
-            Calendar.getInstance().get(Calendar.YEAR).toString()
-            movieAdapter.addMovies (
-            popularMovies
-            .filter { movie ->
-                // aman dari null [cite: 146]
-                movie.releaseDate?.startsWith(currentYear) == true
-            }
-                .sortedByDescending { it.popularity }
-            )
-        }
-
-        movieViewModel.error.observe(this) { error ->
-            if (error.isNotEmpty()) {
-                Snackbar.make (recyclerView, error, Snackbar.LENGTH_LONG).show()
+        // New Flow collection:
+        lifecycleScope.launch {
+            repeatOnLifecycle (Lifecycle.State.STARTED) {
+                launch {
+                    // collect the list of movies from the StateFlow
+                    movieViewModel.popularMovies.collect { movies ->
+                        // add the List of movies to the adapter
+                        movieAdapter.addMovies (movies)
+                    }
+                }
+                launch {
+                    // collect the error message from the StateFlow
+                    movieViewModel.error.collect { error ->
+                        // if an error occurs, show a Snackbar with the error message
+                        if (error.isNotEmpty()) Snackbar
+                            .make(
+                                recyclerView, error, Snackbar.LENGTH_LONG
+                            ).show()
+                    }
+                }
             }
         }
     }
-
     private fun openMovieDetails(movie: Movie) {
         val intent = Intent(this, DetailsActivity::class.java).apply {
             putExtra(DetailsActivity.EXTRA_TITLE, movie.title)
